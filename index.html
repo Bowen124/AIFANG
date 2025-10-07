@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIFANG PLAN</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <!-- 配置Tailwind：纯黑底 + 黄色为主色 -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#FFCC00', // 黄色主色
+            light: {
+              bg: '#F1F5F9',
+              card: '#FFFFFF',
+              text: '#1E293B', // 浅色模式黑色文本
+              textSecondary: '#64748B',
+              border: '#E2E8F0'
+            },
+            dark: {
+              bg: '#000000', // 纯黑背景
+              card: '#121212', // 深灰卡片
+              text: '#F8F8F8', // 亮白文本
+              textSecondary: '#FFCC00', // 次要文本黄色
+              border: '#FFCC00' // 黄色线条（核心黄色变量）
+            }
+          },
+          fontFamily: {
+            inter: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .card-shadow {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        @apply dark:shadow-white/5;
+      }
+      .transition-custom {
+        transition: all 0.3s ease;
+      }
+      /* 1. 基础样式：浅色黑字，深色黄字 */
+      .week-day {
+        @apply flex flex-col items-center justify-center p-2 rounded-lg cursor-pointer transition-custom
+               text-light-text dark:text-dark-border; /* 浅色黑、深色黄 */
+      }
+      /* 2. 选中样式：强制黄底黑字（!important确保优先级，覆盖任何模式的基础文本色） */
+      .week-day-selected {
+        @apply bg-dark-border text-black !important; /* 黄色背景+黑色文本，!important破局优先级问题 */
+      }
+      /* 今天日期：黄色边框 */
+      .week-day-today {
+        @apply ring-2 ring-dark-border;
+      }
+      /* 有计划的日期：底部黄色标记点 */
+      .week-day-has-plan::after {
+        content: '';
+        @apply w-1.5 h-1.5 rounded-full bg-dark-border mt-1;
+      }
+      .month-grid {
+        grid-template-columns: repeat(7, 1fr);
+      }
+    }
+  </style>
+  <style>
+    html {
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      @apply bg-light-bg text-light-text dark:bg-dark-bg dark:text-dark-text;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn {
+      animation: fadeIn 0.4s ease forwards;
+    }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    .reminder {
+      animation: slideIn 0.5s ease forwards;
+    }
+
+    input[type="date"] {
+      @apply px-3 py-1.5 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      @apply filter invert dark:invert-0;
+    }
+
+    .calendar-transition {
+      transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <!-- 提醒弹窗 -->
+  <div id="reminder" class="fixed right-0 top-20 p-4 bg-light-card rounded-l-lg shadow-lg z-50 w-80 hidden reminder dark:bg-dark-card dark:border-l-2 dark:border-dark-border">
+    <div class="flex justify-between items-start mb-2">
+      <h3 class="font-semibold text-primary text-lg">计划提醒</h3>
+      <button id="closeReminder" class="text-light-textSecondary hover:text-light-text dark:text-dark-textSecondary dark:hover:text-dark-text">
+        <i class="fa fa-times"></i>
+      </button>
+    </div>
+    <p id="reminderText" class="text-light-textSecondary dark:text-dark-textSecondary"></p>
+  </div>
+
+  <!-- 登录/注册页面 -->
+  <div id="authPage" class="min-h-screen flex items-center justify-center p-4 bg-light-bg dark:bg-dark-bg">
+    <div class="w-full max-w-md bg-light-card rounded-xl shadow-lg overflow-hidden dark:bg-dark-card dark:border dark:border-dark-border">
+      <div class="p-6 sm:p-8">
+        <div class="text-center mb-6">
+          <h2 class="text-2xl font-bold text-light-text dark:text-dark-text">AIFANG PLAN</h2>
+          <p class="mt-2 text-light-textSecondary dark:text-dark-textSecondary">高效管理您的日常计划</p>
+        </div>
+        
+        <!-- 登录表单 -->
+        <div id="loginForm">
+          <div class="mb-4">
+            <label for="loginEmail" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">邮箱</label>
+            <input type="email" id="loginEmail" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="your@email.com" required>
+          </div>
+          <div class="mb-6">
+            <label for="loginPassword" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">密码</label>
+            <input type="password" id="loginPassword" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="••••••••" required>
+          </div>
+          <button id="loginBtn" class="w-full bg-primary hover:bg-primary/90 text-black font-medium py-2 px-4 rounded-lg transition-custom">
+            登录
+          </button>
+          <p class="mt-4 text-center text-light-textSecondary text-sm dark:text-dark-textSecondary">
+            还没有账号？ <button id="showRegister" class="text-primary hover:underline">注册</button>
+          </p>
+        </div>
+        
+        <!-- 注册表单 -->
+        <div id="registerForm" class="hidden">
+          <div class="mb-4">
+            <label for="registerName" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">用户名</label>
+            <input type="text" id="registerName" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="您的姓名" required>
+          </div>
+          <div class="mb-4">
+            <label for="registerEmail" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">邮箱</label>
+            <input type="email" id="registerEmail" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="your@email.com" required>
+          </div>
+          <div class="mb-6">
+            <label for="registerPassword" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">密码</label>
+            <input type="password" id="registerPassword" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="至少8个字符" required>
+          </div>
+          <button id="registerBtn" class="w-full bg-primary hover:bg-primary/90 text-black font-medium py-2 px-4 rounded-lg transition-custom">
+            注册
+          </button>
+          <p class="mt-4 text-center text-light-textSecondary text-sm dark:text-dark-textSecondary">
+            已有账号？ <button id="showLogin" class="text-primary hover:underline">登录</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主应用页面 -->
+  <div id="appPage" class="hidden min-h-screen flex flex-col bg-light-bg dark:bg-dark-bg">
+    <!-- 顶部导航 -->
+    <header class="bg-light-card shadow-sm sticky top-0 z-40 dark:bg-dark-card dark:border-b dark:border-dark-border">
+      <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+          <i class="fa fa-calendar-check-o text-primary text-xl"></i>
+          <h1 class="text-xl font-bold text-light-text dark:text-dark-text">AIFANG PLAN</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+          <button id="themeToggle" class="p-2 rounded-full hover:bg-light-bg dark:hover:bg-dark-bg transition-custom text-light-textSecondary dark:text-dark-border">
+            <i class="fa fa-moon-o dark:hidden"></i>
+            <i class="fa fa-sun-o hidden dark:inline-block"></i>
+          </button>
+          <span id="currentUser" class="text-light-textSecondary dark:text-dark-textSecondary"></span>
+          <button id="logoutBtn" class="text-light-textSecondary hover:text-red-500 dark:text-dark-textSecondary dark:hover:text-red-500 transition-custom">
+            <i class="fa fa-sign-out mr-1"></i> 退出
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主要内容区 -->
+    <main class="flex-grow container mx-auto px-4 py-6 bg-light-bg dark:bg-dark-bg">
+      <!-- 日期显示 + 日期选择器 -->
+      <div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 id="currentDate" class="text-2xl font-semibold text-light-text dark:text-dark-text"></h2>
+          <p id="currentWeekday" class="text-light-textSecondary dark:text-dark-textSecondary"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="datePicker" class="text-light-textSecondary dark:text-dark-textSecondary">选择日期：</label>
+          <input type="date" id="datePicker" class="max-w-[180px]">
+        </div>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-light-card rounded-lg p-4 shadow-sm border border-light-border dark:bg-dark-card dark:border-dark-border">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-light-textSecondary text-sm dark:text-dark-textSecondary">选中日期计划总数</p>
+              <h3 id="totalPlans" class="text-2xl font-bold text-light-text mt-1 dark:text-dark-text">0</h3>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <i class="fa fa-list"></i>
+            </div>
+          </div>
+        </div>
+        <div class="bg-light-card rounded-lg p-4 shadow-sm border border-light-border dark:bg-dark-card dark:border-dark-border">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-light-textSecondary text-sm dark:text-dark-textSecondary">已完成</p>
+              <h3 id="completedPlans" class="text-2xl font-bold text-green-500 mt-1 dark:text-dark-text">0</h3>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
+              <i class="fa fa-check"></i>
+            </div>
+          </div>
+        </div>
+        <div class="bg-light-card rounded-lg p-4 shadow-sm border border-light-border dark:bg-dark-card dark:border-dark-border">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-light-textSecondary text-sm dark:text-dark-textSecondary">完成率</p>
+              <h3 id="completionRate" class="text-2xl font-bold text-primary mt-1 dark:text-dark-text">0%</h3>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500">
+              <i class="fa fa-pie-chart"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 添加计划按钮 + 日历 -->
+      <div class="mb-6">
+        <button id="addPlanBtn" class="bg-dark-border border-dark-border text-black px-4 py-2 rounded-lg transition-custom flex items-center mb-4 hover:bg-dark-border/90">
+          <i class="fa fa-plus mr-2"></i> 添加选中日期计划
+        </button>
+        
+        <!-- 可展开日历 -->
+        <div class="bg-light-card rounded-lg shadow-sm border border-light-border overflow-hidden dark:bg-dark-card dark:border-dark-border">
+          <!-- 日历控制栏 -->
+          <div class="p-4 border-b border-light-border flex justify-between items-center dark:border-dark-border">
+            <div class="flex items-center gap-2">
+              <h4 class="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">日历</h4>
+              <span class="text-xs bg-light-bg text-light-textSecondary px-2 py-0.5 rounded-full dark:bg-dark-bg dark:text-dark-border" id="currentCalendarView">周视图</span>
+            </div>
+            
+            <div class="flex items-center gap-3">
+              <button id="toggleCalendarView" class="text-sm text-primary hover:text-primary/80 transition-custom flex items-center gap-1">
+                <i class="fa fa-calendar"></i>
+                <span>切换到月视图</span>
+              </button>
+              
+              <div id="monthNavigation" class="hidden items-center gap-2">
+                <button id="prevMonth" class="p-1.5 rounded hover:bg-light-bg dark:hover:bg-dark-bg transition-custom text-light-textSecondary dark:text-dark-border">
+                  <i class="fa fa-chevron-left"></i>
+                </button>
+                <span id="currentMonthDisplay" class="text-sm font-medium text-light-text dark:text-dark-text"></span>
+                <button id="nextMonth" class="p-1.5 rounded hover:bg-light-bg dark:hover:bg-dark-bg transition-custom text-light-textSecondary dark:text-dark-border">
+                  <i class="fa fa-chevron-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 周视图日历（核心区域） -->
+          <div id="weekCalendarContainer" class="p-4 calendar-transition">
+            <div id="weekCalendar" class="grid grid-cols-7 gap-1 sm:gap-2">
+              <!-- 周视图日期通过JS生成 -->
+            </div>
+          </div>
+          
+          <!-- 月视图日历 -->
+          <div id="monthCalendarContainer" class="hidden calendar-transition overflow-hidden max-h-0 opacity-0 p-0">
+            <div class="grid month-grid text-center text-xs text-light-textSecondary py-2 border-b border-light-border dark:text-dark-border dark:border-dark-border">
+              <div>周日</div>
+              <div>周一</div>
+              <div>周二</div>
+              <div>周三</div>
+              <div>周四</div>
+              <div>周五</div>
+              <div>周六</div>
+            </div>
+            <div id="monthCalendar" class="grid month-grid gap-1 p-2">
+              <!-- 月视图日期通过JS生成 -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 计划列表 -->
+      <div class="bg-light-card rounded-lg shadow-sm border border-light-border overflow-hidden dark:bg-dark-card dark:border-dark-border">
+        <div class="p-4 border-b border-light-border bg-light-bg dark:border-dark-border dark:bg-dark-bg">
+          <h3 id="planListTitle" class="font-semibold text-light-text dark:text-dark-text">选中日期计划</h3>
+        </div>
+        <div id="plansContainer" class="divide-y divide-light-border dark:divide-dark-border">
+          <div class="p-8 text-center text-light-textSecondary dark:text-dark-textSecondary" id="emptyState">
+            <i class="fa fa-calendar-o text-4xl mb-3 text-light-border dark:text-dark-border"></i>
+            <p>选中日期暂无计划，点击"添加选中日期计划"开始创建</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-light-card border-t border-light-border py-4 dark:bg-dark-card dark:border-t dark:border-dark-border">
+      <div class="container mx-auto px-4 text-center text-light-textSecondary text-sm dark:text-dark-textSecondary">
+        <p>© 2023 AIFANG PLAN - 高效管理您的日常计划</p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 添加/编辑计划模态框 -->
+  <div id="planModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-light-card rounded-lg w-full max-w-md p-6 shadow-xl animate-fadeIn dark:bg-dark-card dark:border dark:border-dark-border">
+      <div class="flex justify-between items-center mb-4">
+        <h3 id="modalTitle" class="text-xl font-semibold text-light-text dark:text-dark-text">添加计划</h3>
+        <button id="closeModal" class="text-light-textSecondary hover:text-light-text dark:text-dark-textSecondary dark:hover:text-dark-text">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+      <form id="planForm">
+        <input type="hidden" id="planId">
+        <div class="mb-4">
+          <label for="planContent" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">计划内容</label>
+          <textarea id="planContent" rows="3" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" placeholder="请输入计划内容..." required></textarea>
+        </div>
+        <div class="mb-6">
+          <label for="planTime" class="block text-sm font-medium text-light-text mb-1 dark:text-dark-text">计划时间</label>
+          <input type="datetime-local" id="planTime" class="w-full px-4 py-2 border border-light-border rounded-lg focus:ring-2 focus:ring-dark-border focus:border-dark-border transition-custom dark:border-dark-border dark:bg-dark-card dark:text-dark-text" required>
+        </div>
+        <div class="flex justify-end space-x-3">
+          <button type="button" id="cancelBtn" class="px-4 py-2 border border-light-border rounded-lg text-light-text hover:bg-light-bg transition-custom dark:border-dark-border dark:text-dark-text dark:hover:bg-dark-bg">
+            取消
+          </button>
+          <button type="submit" class="px-4 py-2 bg-primary hover:bg-primary/90 text-black rounded-lg transition-custom">
+            保存
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // 主题管理
+    const ThemeManager = {
+      init() {
+        const savedTheme = localStorage.getItem('aifangPlanTheme');
+        if (savedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      },
+      
+      toggle() {
+        const isDark = document.documentElement.classList.toggle('dark');
+        localStorage.setItem('aifangPlanTheme', isDark ? 'dark' : 'light');
+      }
+    };
+
+    // 数据存储与管理
+    const PlanManager = {
+      init() {
+        if (!localStorage.getItem('users')) {
+          localStorage.setItem('users', JSON.stringify({}));
+        }
+        if (!localStorage.getItem('currentUser')) {
+          localStorage.setItem('currentUser', '');
+        }
+      },
+      
+      register(name, email, password) {
+        const users = JSON.parse(localStorage.getItem('users'));
+        if (users[email]) {
+          return { success: false, message: '该邮箱已被注册' };
+        }
+        users[email] = {
+          name,
+          password,
+          plans: {}
+        };
+        localStorage.setItem('users', JSON.stringify(users));
+        return { success: true };
+      },
+      
+      login(email, password) {
+        const users = JSON.parse(localStorage.getItem('users'));
+        const user = users[email];
+        if (!user || user.password !== password) {
+          return { success: false, message: '邮箱或密码错误' };
+        }
+        localStorage.setItem('currentUser', email);
+        return { success: true, user };
+      },
+      
+      logout() {
+        localStorage.setItem('currentUser', '');
+      },
+      
+      getCurrentUser() {
+        const email = localStorage.getItem('currentUser');
+        if (!email) return null;
+        const users = JSON.parse(localStorage.getItem('users'));
+        return { email, ...users[email] };
+      },
+      
+      getPlansByDate(dateStr) {
+        const user = this.getCurrentUser();
+        if (!user) return [];
+        return user.plans[dateStr] || [];
+      },
+      
+      getPlanDatesInMonth(year, month) {
+        const user = this.getCurrentUser();
+        if (!user) return [];
+        
+        const planDates = [];
+        const targetMonth = (month + 1).toString().padStart(2, '0');
+        
+        for (const dateStr in user.plans) {
+          const [dateYear, dateMonth] = dateStr.split('-');
+          if (dateYear === year.toString() && dateMonth === targetMonth) {
+            planDates.push(dateStr);
+          }
+        }
+        return planDates;
+      },
+      
+      addPlan(plan) {
+        const user = this.getCurrentUser();
+        if (!user) return false;
+        
+        const dateStr = this.formatDate(plan.time);
+        const users = JSON.parse(localStorage.getItem('users'));
+        
+        if (!users[user.email].plans[dateStr]) {
+          users[user.email].plans[dateStr] = [];
+        }
+        
+        plan.id = Date.now().toString();
+        plan.completed = false;
+        users[user.email].plans[dateStr].push(plan);
+        
+        localStorage.setItem('users', JSON.stringify(users));
+        return plan;
+      },
+      
+      updatePlan(planId, updatedPlan) {
+        const user = this.getCurrentUser();
+        if (!user) return false;
+        
+        const users = JSON.parse(localStorage.getItem('users'));
+        const dateStr = this.formatDate(updatedPlan.time);
+        let originalDateStr = null;
+        
+        for (const date in users[user.email].plans) {
+          const plans = users[user.email].plans[date];
+          const index = plans.findIndex(p => p.id === planId);
+          if (index !== -1) {
+            originalDateStr = date;
+            plans.splice(index, 1);
+            if (plans.length === 0) delete users[user.email].plans[date];
+            break;
+          }
+        }
+        
+        if (!users[user.email].plans[dateStr]) {
+          users[user.email].plans[dateStr] = [];
+        }
+        updatedPlan.id = planId;
+        users[user.email].plans[dateStr].push(updatedPlan);
+        
+        localStorage.setItem('users', JSON.stringify(users));
+        return true;
+      },
+      
+      togglePlanCompletion(planId, completed) {
+        const user = this.getCurrentUser();
+        if (!user) return false;
+        
+        const users = JSON.parse(localStorage.getItem('users'));
+        for (const date in users[user.email].plans) {
+          const plans = users[user.email].plans[date];
+          const index = plans.findIndex(p => p.id === planId);
+          if (index !== -1) {
+            plans[index].completed = completed;
+            localStorage.setItem('users', JSON.stringify(users));
+            return true;
+          }
+        }
+        return false;
+      },
+      
+      deletePlan(planId) {
+        const user = this.getCurrentUser();
+        if (!user) return false;
+        
+        const users = JSON.parse(localStorage.getItem('users'));
+        for (const date in users[user.email].plans) {
+          const plans = users[user.email].plans[date];
+          const index = plans.findIndex(p => p.id === planId);
+          if (index !== -1) {
+            plans.splice(index, 1);
+            if (plans.length === 0) delete users[user.email].plans[date];
+            localStorage.setItem('users', JSON.stringify(users));
+            return true;
+          }
+        }
+        return false;
+      },
+      
+      formatDate(dateStr) {
+        const date = new Date(dateStr);
+        return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+      },
+      
+      getTodayStr() {
+        const today = new Date();
+        return `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+      }
+    };
+
+    // 提醒管理器
+    const ReminderManager = {
+      reminders: [],
+      
+      setReminder(plan) {
+        const now = new Date();
+        const planTime = new Date(plan.time);
+        
+        if (planTime > now && !plan.completed) {
+          const timeDiff = planTime - now;
+          const timerId = setTimeout(() => {
+            this.showReminder(plan);
+          }, timeDiff);
+          
+          this.reminders.push({ planId: plan.id, timerId });
+        }
+      },
+      
+      clearAllReminders() {
+        this.reminders.forEach(reminder => clearTimeout(reminder.timerId));
+        this.reminders = [];
+      },
+      
+      showReminder(plan) {
+        const reminderEl = document.getElementById('reminder');
+        const reminderText = document.getElementById('reminderText');
+        
+        reminderText.textContent = `您有计划需要完成：${plan.content}`;
+        reminderEl.classList.remove('hidden');
+      }
+    };
+
+    // UI控制器（周视图核心逻辑）
+    const UIController = {
+      selectedDate: PlanManager.getTodayStr(),
+      currentView: 'week',
+      currentCalendarMonth: new Date().getMonth(),
+      currentCalendarYear: new Date().getFullYear(),
+      
+      init() {
+        ThemeManager.init();
+        PlanManager.init();
+        this.checkLoginStatus();
+        this.setupEventListeners();
+        this.initDatePicker();
+        this.updateDateDisplay();
+      },
+      
+      checkLoginStatus() {
+        const currentUser = PlanManager.getCurrentUser();
+        if (currentUser) {
+          this.showAppPage();
+          document.getElementById('currentUser').textContent = currentUser.name;
+          this.loadPlans(this.selectedDate);
+          this.renderWeekCalendar(); // 初始化周视图
+          this.updateMonthDisplay();
+        } else {
+          this.showAuthPage();
+        }
+      },
+      
+      // 周视图核心渲染：确保选中时黑字
+      renderWeekCalendar() {
+        const calendarContainer = document.getElementById('weekCalendar');
+        calendarContainer.innerHTML = '';
+        
+        const weekDates = this.getCurrentWeekDates();
+        const todayStr = PlanManager.getTodayStr();
+        const user = PlanManager.getCurrentUser();
+        const planDates = user ? Object.keys(user.plans) : [];
+        
+        weekDates.forEach(dayInfo => {
+          const dayBtn = document.createElement('button');
+          const hasPlan = planDates.includes(dayInfo.dateStr);
+          const isSelected = this.selectedDate === dayInfo.dateStr;
+          const isToday = todayStr === dayInfo.dateStr;
+          
+          // 核心：通过类名控制样式，选中类.week-day-selected会强制黑字
+          dayBtn.className = `week-day ${isSelected ? 'week-day-selected' : ''} ${isToday ? 'week-day-today' : ''} ${hasPlan ? 'week-day-has-plan' : ''}`;
+          
+          dayBtn.innerHTML = `
+            <span class="text-xs">${dayInfo.weekday}</span>
+            <span class="font-medium">${dayInfo.day}</span>
+          `;
+          
+          dayBtn.addEventListener('click', () => {
+            this.selectedDate = dayInfo.dateStr;
+            this.updateDateDisplay();
+            this.loadPlans(this.selectedDate);
+            this.renderWeekCalendar(); // 重新渲染更新选中状态
+            this.updateDatePicker();
+          });
+          
+          calendarContainer.appendChild(dayBtn);
+        });
+      },
+      
+      getCurrentWeekDates() {
+        const result = [];
+        const today = new Date(this.selectedDate);
+        const dayOfWeek = today.getDay() || 7; // 周一为1，周日为7
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - (dayOfWeek - 1)); // 周一
+        
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(startOfWeek);
+          date.setDate(startOfWeek.getDate() + i);
+          
+          result.push({
+            date: date,
+            dateStr: `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`,
+            day: date.getDate(),
+            weekday: ['一', '二', '三', '四', '五', '六', '日'][i]
+          });
+        }
+        return result;
+      },
+      
+      // 其他方法保持不变（加载计划、渲染计划等）
+      loadPlans(dateStr) {
+        const plans = PlanManager.getPlansByDate(dateStr);
+        const container = document.getElementById('plansContainer');
+        const emptyState = document.getElementById('emptyState');
+        
+        Array.from(container.children).forEach(child => {
+          if (child !== emptyState) container.removeChild(child);
+        });
+        
+        const total = plans.length;
+        const completed = plans.filter(p => p.completed).length;
+        const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+        
+        document.getElementById('totalPlans').textContent = total;
+        document.getElementById('completedPlans').textContent = completed;
+        document.getElementById('completionRate').textContent = `${rate}%`;
+        
+        if (total === 0) {
+          emptyState.classList.remove('hidden');
+          return;
+        }
+        emptyState.classList.add('hidden');
+        
+        plans.sort((a, b) => new Date(a.time) - new Date(b.time))
+             .forEach(plan => this.renderPlan(plan));
+        
+        ReminderManager.clearAllReminders();
+        plans.forEach(plan => ReminderManager.setReminder(plan));
+      },
+      
+      renderPlan(plan) {
+        const container = document.getElementById('plansContainer');
+        const planEl = document.createElement('div');
+        planEl.className = 'p-4 flex items-center justify-between transition-custom hover:bg-light-bg dark:hover:bg-dark-bg';
+        
+        const time = new Date(plan.time);
+        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+        
+        planEl.innerHTML = `
+          <div class="flex items-start gap-3 flex-1">
+            <div class="mt-0.5">
+              <input type="checkbox" ${plan.completed ? 'checked' : ''} 
+                     class="w-5 h-5 rounded border-light-border text-primary focus:ring-dark-border dark:border-dark-border"
+                     data-id="${plan.id}">
+            </div>
+            <div>
+              <p class="text-light-text ${plan.completed ? 'line-through text-light-textSecondary' : ''} dark:text-dark-text dark:${plan.completed ? 'text-dark-textSecondary' : ''}">${plan.content}</p>
+              <p class="text-xs text-light-textSecondary mt-1 dark:text-dark-textSecondary">${timeStr}</p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button class="edit-plan p-1.5 text-light-textSecondary hover:text-primary transition-custom" data-id="${plan.id}">
+              <i class="fa fa-pencil"></i>
+            </button>
+            <button class="delete-plan p-1.5 text-light-textSecondary hover:text-red-500 transition-custom" data-id="${plan.id}">
+              <i class="fa fa-trash"></i>
+            </button>
+          </div>
+        `;
+        
+        container.appendChild(planEl);
+        
+        planEl.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
+          PlanManager.togglePlanCompletion(e.target.dataset.id, e.target.checked);
+          this.loadPlans(this.selectedDate);
+        });
+        
+        planEl.querySelector('.edit-plan').addEventListener('click', (e) => {
+          this.openEditModal(e.target.closest('.edit-plan').dataset.id);
+        });
+        
+        planEl.querySelector('.delete-plan').addEventListener('click', (e) => {
+          if (confirm('确定要删除这个计划吗？')) {
+            PlanManager.deletePlan(e.target.closest('.delete-plan').dataset.id);
+            this.loadPlans(this.selectedDate);
+            this.renderWeekCalendar();
+          }
+        });
+      },
+      
+      openEditModal(planId) {
+        let plan = null;
+        const user = PlanManager.getCurrentUser();
+        for (const date in user.plans) {
+          const found = user.plans[date].find(p => p.id === planId);
+          if (found) {
+            plan = found;
+            break;
+          }
+        }
+        
+        if (!plan) return;
+        
+        document.getElementById('modalTitle').textContent = '编辑计划';
+        document.getElementById('planId').value = plan.id;
+        document.getElementById('planContent').value = plan.content;
+        
+        const time = new Date(plan.time);
+        const datetimeLocal = time.toISOString().slice(0, 16);
+        document.getElementById('planTime').value = datetimeLocal;
+        
+        document.getElementById('planModal').classList.remove('hidden');
+      },
+      
+      openAddModal() {
+        document.getElementById('modalTitle').textContent = '添加计划';
+        document.getElementById('planForm').reset();
+        document.getElementById('planId').value = '';
+        
+        const defaultTime = new Date(this.selectedDate);
+        defaultTime.setHours(new Date().getHours());
+        defaultTime.setMinutes(Math.ceil(new Date().getMinutes() / 15) * 15);
+        const datetimeLocal = defaultTime.toISOString().slice(0, 16);
+        document.getElementById('planTime').value = datetimeLocal;
+        
+        document.getElementById('planModal').classList.remove('hidden');
+      },
+      
+      updateDateDisplay() {
+        const date = new Date(this.selectedDate);
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        const weekdayOptions = { weekday: 'long' };
+        
+        document.getElementById('currentDate').textContent = date.toLocaleDateString('zh-CN', options);
+        document.getElementById('currentWeekday').textContent = date.toLocaleDateString('zh-CN', weekdayOptions);
+        document.getElementById('planListTitle').textContent = `${date.toLocaleDateString('zh-CN', options)} 的计划`;
+      },
+      
+      initDatePicker() {
+        const datePicker = document.getElementById('datePicker');
+        datePicker.value = this.selectedDate;
+        
+        datePicker.addEventListener('change', (e) => {
+          if (e.target.value) {
+            this.selectedDate = e.target.value;
+            this.updateDateDisplay();
+            this.loadPlans(this.selectedDate);
+            this.renderWeekCalendar();
+          }
+        });
+      },
+      
+      updateDatePicker() {
+        document.getElementById('datePicker').value = this.selectedDate;
+      },
+      
+      toggleCalendarView() {
+        const weekContainer = document.getElementById('weekCalendarContainer');
+        const monthContainer = document.getElementById('monthCalendarContainer');
+        const toggleBtn = document.getElementById('toggleCalendarView');
+        const viewLabel = document.getElementById('currentCalendarView');
+        const monthNav = document.getElementById('monthNavigation');
+        
+        if (this.currentView === 'week') {
+          this.currentView = 'month';
+          weekContainer.classList.add('hidden');
+          monthContainer.classList.remove('hidden');
+          setTimeout(() => {
+            monthContainer.style.maxHeight = '500px';
+            monthContainer.style.opacity = '1';
+            monthContainer.style.padding = '4px';
+          }, 10);
+          toggleBtn.innerHTML = '<i class="fa fa-calendar"></i><span>切换到周视图</span>';
+          viewLabel.textContent = '月视图';
+          monthNav.classList.remove('hidden');
+          monthNav.classList.add('flex');
+          this.renderMonthCalendar();
+        } else {
+          this.currentView = 'week';
+          monthContainer.style.maxHeight = '0';
+          monthContainer.style.opacity = '0';
+          monthContainer.style.padding = '0';
+          setTimeout(() => {
+            monthContainer.classList.add('hidden');
+            weekContainer.classList.remove('hidden');
+          }, 300);
+          toggleBtn.innerHTML = '<i class="fa fa-calendar"></i><span>切换到月视图</span>';
+          viewLabel.textContent = '周视图';
+          monthNav.classList.remove('flex');
+          monthNav.classList.add('hidden');
+          this.renderWeekCalendar();
+        }
+      },
+      
+      renderMonthCalendar() {
+        const calendarContainer = document.getElementById('monthCalendar');
+        calendarContainer.innerHTML = '';
+        
+        const year = this.currentCalendarYear;
+        const month = this.currentCalendarMonth;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const firstDayOfMonth = new Date(year, month, 1).getDay();
+        
+        const planDates = PlanManager.getPlanDatesInMonth(year, month);
+        const todayStr = PlanManager.getTodayStr();
+        
+        for (let i = 0; i < firstDayOfMonth; i++) {
+          const emptyDay = document.createElement('div');
+          emptyDay.className = 'h-12 md:h-16 flex items-center justify-center text-transparent';
+          calendarContainer.appendChild(emptyDay);
+        }
+        
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+          const isSelected = this.selectedDate === dateStr;
+          const isToday = todayStr === dateStr;
+          const hasPlan = planDates.includes(dateStr);
+          
+          const dayEl = document.createElement('button');
+          // 月视图选中也保持黄底黑字
+          dayEl.className = `h-12 md:h-16 flex flex-col items-center justify-center rounded-full transition-custom relative
+                            ${isSelected ? 'bg-dark-border text-black !important' : 'text-light-text dark:text-dark-border hover:bg-light-bg dark:hover:bg-dark-bg'}
+                            ${isToday ? 'ring-2 ring-dark-border' : ''}`;
+          
+          dayEl.innerHTML = `<span>${day}</span>`;
+          
+          if (hasPlan) {
+            const marker = document.createElement('span');
+            marker.className = `absolute bottom-1 w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-black' : 'bg-dark-border'}`;
+            dayEl.appendChild(marker);
+          }
+          
+          dayEl.addEventListener('click', () => {
+            this.selectedDate = dateStr;
+            this.updateDateDisplay();
+            this.loadPlans(this.selectedDate);
+            this.renderMonthCalendar();
+            this.updateDatePicker();
+          });
+          
+          calendarContainer.appendChild(dayEl);
+        }
+      },
+      
+      updateMonthDisplay() {
+        const options = { year: 'numeric', month: 'long' };
+        const displayDate = new Date(this.currentCalendarYear, this.currentCalendarMonth);
+        document.getElementById('currentMonthDisplay').textContent = displayDate.toLocaleDateString('zh-CN', options);
+      },
+      
+      prevMonth() {
+        this.currentCalendarMonth--;
+        if (this.currentCalendarMonth < 0) {
+          this.currentCalendarMonth = 11;
+          this.currentCalendarYear--;
+        }
+        this.updateMonthDisplay();
+        this.renderMonthCalendar();
+      },
+      
+      nextMonth() {
+        this.currentCalendarMonth++;
+        if (this.currentCalendarMonth > 11) {
+          this.currentCalendarMonth = 0;
+          this.currentCalendarYear++;
+        }
+        this.updateMonthDisplay();
+        this.renderMonthCalendar();
+      },
+      
+      showAuthPage() {
+        document.getElementById('authPage').classList.remove('hidden');
+        document.getElementById('appPage').classList.add('hidden');
+      },
+      
+      showAppPage() {
+        document.getElementById('authPage').classList.add('hidden');
+        document.getElementById('appPage').classList.remove('hidden');
+      },
+      
+      setupEventListeners() {
+        document.getElementById('themeToggle').addEventListener('click', () => ThemeManager.toggle());
+        
+        document.getElementById('showRegister').addEventListener('click', () => {
+          document.getElementById('loginForm').classList.add('hidden');
+          document.getElementById('registerForm').classList.remove('hidden');
+        });
+        
+        document.getElementById('showLogin').addEventListener('click', () => {
+          document.getElementById('registerForm').classList.add('hidden');
+          document.getElementById('loginForm').classList.remove('hidden');
+        });
+        
+        document.getElementById('registerBtn').addEventListener('click', () => {
+          const name = document.getElementById('registerName').value;
+          const email = document.getElementById('registerEmail').value;
+          const password = document.getElementById('registerPassword').value;
+          
+          const result = PlanManager.register(name, email, password);
+          if (result.success) {
+            alert('注册成功，请登录');
+            document.getElementById('showLogin').click();
+          } else {
+            alert(result.message);
+          }
+        });
+        
+        document.getElementById('loginBtn').addEventListener('click', () => {
+          const email = document.getElementById('loginEmail').value;
+          const password = document.getElementById('loginPassword').value;
+          
+          const result = PlanManager.login(email, password);
+          if (result.success) {
+            this.checkLoginStatus();
+          } else {
+            alert(result.message);
+          }
+        });
+        
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+          PlanManager.logout();
+          this.checkLoginStatus();
+        });
+        
+        document.getElementById('addPlanBtn').addEventListener('click', () => this.openAddModal());
+        
+        document.getElementById('closeModal').addEventListener('click', () => {
+          document.getElementById('planModal').classList.add('hidden');
+        });
+        
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+          document.getElementById('planModal').classList.add('hidden');
+        });
+        
+        document.getElementById('planForm').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const planId = document.getElementById('planId').value;
+          const content = document.getElementById('planContent').value;
+          const time = document.getElementById('planTime').value;
+          
+          if (planId) {
+            PlanManager.updatePlan(planId, { content, time });
+          } else {
+            PlanManager.addPlan({ content, time });
+          }
+          
+          document.getElementById('planModal').classList.add('hidden');
+          this.loadPlans(this.selectedDate);
+          this.renderWeekCalendar();
+        });
+        
+        document.getElementById('toggleCalendarView').addEventListener('click', () => this.toggleCalendarView());
+        
+        document.getElementById('prevMonth').addEventListener('click', () => this.prevMonth());
+        document.getElementById('nextMonth').addEventListener('click', () => this.nextMonth());
+        
+        document.getElementById('closeReminder').addEventListener('click', () => {
+          document.getElementById('reminder').classList.add('hidden');
+        });
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      UIController.init();
+    });
+  </script>
+</body>
+</html>
